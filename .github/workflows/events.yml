@@ -1,0 +1,51 @@
+name: Scheduled Event Aggregation
+
+on:
+  schedule:
+    # Weekly on Monday at 05:00 Europe/Zurich (04:00 UTC standard time)
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  aggregate-events:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run event aggregation pipeline
+        env:
+          EVENTFROG_API_KEY: ${{ secrets.EVENTFROG_API_KEY }}
+        run: |
+          python run.py
+
+      - name: Validate events output against JSON schema
+        run: |
+          python validate.py
+
+      - name: Commit and push updated events.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/events.json
+          if git diff --staged --quiet; then
+            echo "No changes to events.json"
+          else
+            git commit -m "chore(data): automated weekly event refresh [skip ci]"
+            git push
+          fi
