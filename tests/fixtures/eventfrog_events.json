@@ -1,0 +1,54 @@
+[
+  {
+    "id": "102938475",
+    "title": "St. Gallen Jazz Night",
+    "description": "Live jazz concert featuring local and international artists in the heart of St. Gallen.",
+    "url": "https://eventfrog.net/de/p/konzerte/jazz/st-gallen-jazz-night-102938475.html",
+    "category": "nightlife_music",
+    "start": "2026-11-20T20:00:00+01:00",
+    "end": "2026-11-20T23:30:00+01:00",
+    "all_day": false,
+    "location": {
+      "name": "Kugl St. Gallen",
+      "street": "Güterbahnhofstrasse 4",
+      "zip": "9000",
+      "city": "St. Gallen",
+      "latitude": 47.4212,
+      "longitude": 9.3621
+    },
+    "price": {
+      "min": 15.0,
+      "max": 25.0,
+      "currency": "CHF",
+      "ticket_url": "https://eventfrog.net/tickets/102938475"
+    },
+    "language": "de",
+    "image": "https://eventfrog.net/media/event-102938475.jpg"
+  },
+  {
+    "id": "554433221",
+    "title": "FC St. Gallen vs FC Basel",
+    "description": "Swiss Super League match at Kybunpark.",
+    "url": "https://eventfrog.net/de/p/sport/fussball/fcsg-fcb-554433221.html",
+    "category": "sports",
+    "start": "2026-11-22T16:30:00+01:00",
+    "end": "2026-11-22T18:30:00+01:00",
+    "all_day": false,
+    "location": {
+      "name": "Kybunpark",
+      "street": "Zürcherstrasse 464",
+      "zip": "9015",
+      "city": "St. Gallen",
+      "latitude": 47.4089,
+      "longitude": 9.3094
+    },
+    "price": {
+      "min": 25.0,
+      "max": 70.0,
+      "currency": "CHF",
+      "ticket_url": "https://eventfrog.net/tickets/554433221"
+    },
+    "language": "de",
+    "image": "https://eventfrog.net/media/fcsg.jpg"
+  }
+]
