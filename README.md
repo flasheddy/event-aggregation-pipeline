@@ -1,5 +1,7 @@
 # Event Aggregation Pipeline
 
+[![CI](https://github.com/flasheddy/event-aggregation-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/flasheddy/event-aggregation-pipeline/actions/workflows/ci.yml)
+
 A fault-isolated Python pipeline that collects physical events from the Eventfrog API and two TYPO3 portals, normalizes and deduplicates overlapping records across sources, and writes a snapshot validated against a Draft 2020-12 JSON Schema.
 
 It ships configured for St. Gallen, Switzerland: Eventfrog, the University of St. Gallen calendar, and HSG SQUARE.
@@ -24,6 +26,8 @@ Each source runs inside its own failure boundary. If every source fails, the pre
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). [just](https://github.com/casey/just) is optional but used below.
 
 ```bash
+git clone https://github.com/flasheddy/event-aggregation-pipeline.git
+cd event-aggregation-pipeline
 uv sync
 cp .env.example .env   # add EVENTFROG_API_KEY for live collection
 
