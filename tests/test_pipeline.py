@@ -10,16 +10,16 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import validate as validate_module
-from st_gallen_events_kata.deduplicator import deduplicate_events
-from st_gallen_events_kata.eventfrog import parse_eventfrog_payload
-from st_gallen_events_kata.models import (
+from event_aggregation_pipeline.deduplicator import deduplicate_events
+from event_aggregation_pipeline.eventfrog import parse_eventfrog_payload
+from event_aggregation_pipeline.models import (
     Event,
     EventCategory,
     EventSource,
     PipelineConfig,
 )
-from st_gallen_events_kata.pipeline import run_pipeline
-from st_gallen_events_kata.typo3_scraper import parse_typo3_html
+from event_aggregation_pipeline.pipeline import run_pipeline
+from event_aggregation_pipeline.typo3_scraper import parse_typo3_html
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 ZURICH = ZoneInfo("Europe/Zurich")

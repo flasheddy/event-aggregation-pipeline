@@ -24,10 +24,7 @@ from .normalization import categorize_event, clean_text, detect_language, is_onl
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = (
-    "st-gallen-events-kata/0.1 "
-    "(+https://github.com/st-gallen-events-kata; polite event aggregation)"
-)
+USER_AGENT = "event-aggregation-pipeline/0.1 (polite event aggregation)"
 REQUEST_TIMEOUT_SECONDS = 15.0
 PAGE_DELAY_SECONDS = 1.0
 

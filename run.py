@@ -1,4 +1,4 @@
-"""CLI entry point for the St. Gallen event aggregation pipeline."""
+"""CLI entry point for the multi-source event aggregation pipeline."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-logger = logging.getLogger("st_gallen_events_kata.run")
+logger = logging.getLogger("event_aggregation_pipeline.run")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Collect, normalize, deduplicate, and write St. Gallen events."
+        description="Collect, normalize, deduplicate, and validate multi-source physical events."
     )
     parser.add_argument(
         "--offline",
@@ -44,7 +44,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    from st_gallen_events_kata.pipeline import run_pipeline
+    from event_aggregation_pipeline.pipeline import run_pipeline
 
     try:
         event_list = run_pipeline(offline=args.offline, output_path=args.output)

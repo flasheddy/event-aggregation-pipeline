@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from st_gallen_events_kata.eventfrog import parse_eventfrog_payload
-from st_gallen_events_kata.models import Event, EventCategory, EventLanguage, EventSource
-from st_gallen_events_kata.typo3_scraper import ParsedTypo3Page, parse_typo3_html
+from event_aggregation_pipeline.eventfrog import parse_eventfrog_payload
+from event_aggregation_pipeline.models import Event, EventCategory, EventLanguage, EventSource
+from event_aggregation_pipeline.typo3_scraper import ParsedTypo3Page, parse_typo3_html
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 ZURICH = ZoneInfo("Europe/Zurich")
