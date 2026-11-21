@@ -98,12 +98,6 @@ def _synthetic_page(cards: Sequence[str]) -> str:
     return "<html><body>" + "".join(cards) + "</body></html>"
 
 
-def test_offline_fixtures_available() -> None:
-    assert (FIXTURES_DIR / "unisg_calendar.html").is_file()
-    assert (FIXTURES_DIR / "hsg_square.html").is_file()
-    assert (FIXTURES_DIR / "eventfrog_events.json").is_file()
-
-
 def test_parse_eventfrog_fixture() -> None:
     events = _load_eventfrog()
 
@@ -188,9 +182,6 @@ def test_parse_unisg_calendar_fixture() -> None:
     assert multi_day.category is EventCategory.CULTURE
 
     assert page.max_page == 9
-    assert page.page_numbers == tuple(range(1, 10))
-    assert any("page=2" in url for url in page.pagination_urls)
-    assert any("page=9" in url for url in page.pagination_urls)
 
 
 def test_parse_hsg_square_fixture() -> None:
@@ -235,25 +226,6 @@ def test_parse_hsg_square_fixture() -> None:
     assert roleplay.category is EventCategory.CULTURE
 
     assert page.max_page == 2
-    assert page.page_numbers == (1, 2)
-
-
-def test_static_parser_extracts_at_least_40_events_across_fixture_pages() -> None:
-    unisg = _parse_typo3_fixture("unisg_calendar.html", EventSource.HSG_CALENDAR)
-    square = _parse_typo3_fixture("hsg_square.html", EventSource.HSG_SQUARE)
-    eventfrog = _load_eventfrog()
-
-    parsed: list[Event] = []
-    for _ in range(2):
-        parsed.extend(unisg.events)
-        parsed.extend(square.events)
-    parsed.extend(eventfrog)
-
-    assert len(parsed) == 42
-    assert len(parsed) >= 40
-    assert sum(event.source is EventSource.EVENTFROG for event in parsed) == 2
-    assert sum(event.source is EventSource.HSG_CALENDAR for event in parsed) == 20
-    assert sum(event.source is EventSource.HSG_SQUARE for event in parsed) == 20
 
 
 def test_online_only_events_excluded() -> None:

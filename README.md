@@ -1,257 +1,103 @@
 # Event Aggregation Pipeline
 
-A fault-isolated Python data pipeline that aggregates heterogeneous physical event feeds (REST APIs + TYPO3 HTML portals), deduplicates overlapping entities across sources, normalizes multilingual dates/taxonomies, and enforces Draft 2020-12 JSON Schema validation (`docs/events.schema.json`).
+A fault-isolated Python pipeline that collects physical events from the Eventfrog API and two TYPO3 portals, normalizes and deduplicates overlapping records across sources, and writes a snapshot validated against a Draft 2020-12 JSON Schema.
 
-Ships configured out of the box for St. Gallen, Switzerland (`Eventfrog API`, `University of St. Gallen`, and `HSG SQUARE`), and is structured to plug in additional cities or upstream providers cleanly.
-
----
+It ships configured for St. Gallen, Switzerland: Eventfrog, the University of St. Gallen calendar, and HSG SQUARE.
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    S1["Eventfrog REST API (Token-Bucket 30 req/min)"] --> N["Normalization & Physical-Event Filter"]
-    S2["Unisg Calendar (TYPO3 Lexbor HTML)"] --> N
-    S3["HSG SQUARE (TYPO3 Lexbor HTML)"] --> N
-    N --> D["Cross-Source Deduplicator (title, start, venue)"]
-    D --> V["Pydantic V2 + Draft 2020-12 JSON Schema Gate"]
-    V --> O["Atomic data/events.json Snapshot (Preserves Last Valid File on Total Failure)"]
+flowchart LR
+    EF[Eventfrog API] --> C[Fault-isolated collectors]
+    UC[Unisg calendar] --> C
+    SQ[HSG SQUARE] --> C
+    C --> N[Physical-event filter and normalization]
+    N --> D[Cross-source deduplication]
+    D --> S[Draft 2020-12 schema gate]
+    S --> O[(data/events.json)]
 ```
 
----
+Each source runs inside its own failure boundary. If every source fails, the previous valid `data/events.json` is preserved instead of being overwritten.
 
-## Features
+## Quickstart
 
-- **Multi-Source Aggregation**:
-  - **Eventfrog Public API** (`api.eventfrog.net`): REST collector with built-in token-bucket rate limiting (max 30 requests/minute).
-  - **University of St. Gallen (Unisg)** (`unisg.ch/...`): Public academic calendar, lectures, and conferences parsed via `selectolax.lexbor`.
-  - **HSG SQUARE** (`hsg-square.ch/...`): Campus dialogue, cultural exhibitions, and workshops.
-- **Strict Schema Compliance**: Every output validates 100% against `docs/events.schema.json` via Draft 2020-12 JSON Schema (`jsonschema` with format checking).
-- **Fault-Isolated Execution**: Each upstream source runs inside its own failure boundary. If one source fails, remaining sources still complete; if all sources fail, the previous valid output file is preserved.
-- **Cross-Source Deduplication**: Duplicates matching `(title, start, venue)` are merged deterministically, prioritizing Eventfrog structured metadata.
-- **Physical Event Enforcement**: Automatically filters out online-only webinars and virtual meetings while preserving hybrid on-premise events.
-- **Minimal Standalone Dependencies**: Built strictly on `httpx`, `jsonschema`, `pydantic`, and `selectolax` — no external database or heavyweight framework required.
-
----
-
-## Directory Structure
-
-```text
-.
-├── .github/workflows/
-│   └── events.yml                      # Scheduled GitHub Actions refresh workflow
-├── data/
-│   └── events.json                     # Canonical validated output snapshot
-├── docs/
-│   └── events.schema.json              # Draft 2020-12 JSON Schema
-├── src/event_aggregation_pipeline/
-│   ├── deduplicator.py                 # Cross-source entity deduplication
-│   ├── eventfrog.py                    # Eventfrog REST client & rate limiter
-│   ├── models.py                       # Pydantic data contracts & PipelineConfig
-│   ├── normalization.py                # Text sanitization, date/TZ & taxonomy mapping
-│   ├── pipeline.py                     # Fault-isolated source orchestration
-│   └── typo3_scraper.py                # Lexbor CSS card parser (Unisg + HSG Square)
-├── tests/
-│   ├── fixtures/                       # Sanitized offline HTML & JSON payloads
-│   ├── test_parser.py                  # Offline parser unit tests
-│   └── test_pipeline.py                # Offline pipeline integration tests
-├── .env.example                        # Sample environment variables
-├── justfile                            # Local development task recipes
-├── pyproject.toml                      # Project configuration and dependencies
-├── requirements.txt                    # Pinned production dependencies
-├── run.py                              # Pipeline CLI entry point
-└── validate.py                         # JSON Schema validator CLI
-```
-
----
-
-## Setup & Installation
-
-### Requirements
-
-- Python 3.11 or higher
-- (Optional) `uv` for fast virtualenv management and `just` for task recipes.
-
-### Option A: Standard `pip` (Production)
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Option B: Modern `uv` (Development)
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). [just](https://github.com/casey/just) is optional but used below.
 
 ```bash
 uv sync
+cp .env.example .env   # add EVENTFROG_API_KEY for live collection
+
+just run --offline     # full pipeline against sanitized fixtures
+just validate          # check data/events.json against the schema
 ```
 
-### Environment Configuration
-
-Copy `.env.example` to `.env` and provide your Eventfrog API key:
+Live collection:
 
 ```bash
-cp .env.example .env
+just run
 ```
 
-Edit `.env`:
+Without `EVENTFROG_API_KEY`, the Eventfrog collector is skipped and the two HTML sources still run. The scripts are also runnable directly with `uv run python run.py [--offline]` and `uv run python validate.py [events.json]`; export the key in your shell when invoking them directly.
 
-```ini
-EVENTFROG_API_KEY=your_actual_api_key_here
+## Output
+
+`data/events.json` contains one object with a `generated_at` timestamp and an `events` array. The canonical contract is `docs/events.schema.json`. Abridged example:
+
+```json
+{
+  "generated_at": "2026-11-21T05:00:00+01:00",
+  "events": [
+    {
+      "id": "eventfrog:102938475",
+      "source": "eventfrog",
+      "title": "St. Gallen Jazz Night",
+      "start": "2026-11-20T20:00:00+01:00",
+      "venue_name": "Kugl St. Gallen",
+      "address": "Güterbahnhofstrasse 4, 9000 St. Gallen"
+    }
+  ]
+}
 ```
 
-> **Note:** If no API key is provided, the pipeline logs a warning and continues with the HTML sources (Unisg and HSG Square) without failing.
+Every event carries a stable `<source>:<source_id>` identity, Zurich-offset timestamps, venue details, a fixed category, language, optional coordinates/pricing/URLs, and `last_seen_at`. Online-only events are excluded; hybrid events with a physical venue are kept.
 
----
+Cross-source duplicates match on normalized `(title, start, venue)` and prefer Eventfrog metadata, then HSG SQUARE, then the university calendar.
 
-## How to Run
+## Sources
 
-### Live Execution
-
-Fetch events across all sources and write to `data/events.json`:
-
-```bash
-python run.py
-# or: just run
-```
-
-### Offline Execution (Fixtures)
-
-Test the full aggregation, normalization, deduplication, and export flow offline using sanitized fixtures:
-
-```bash
-python run.py --offline
-# or: just run --offline
-```
-
-### Custom Output Path and Logging
-
-```bash
-python run.py --output /tmp/custom_events.json --log-level DEBUG
-```
-
----
-
-## Schema Validation
-
-Validate `data/events.json` against the Draft 2020-12 schema:
-
-```bash
-python validate.py
-# or: just validate
-```
-
-Validate a custom path:
-
-```bash
-python validate.py /path/to/events.json --schema docs/events.schema.json
-```
-
----
-
-## Category Mapping Table
-
-Every physical event is classified into one of six standardized categories required by `docs/events.schema.json`:
-
-| Category | Description | Matching Rules & Trigger Keywords |
+| Source | Adapter | Input |
 | :--- | :--- | :--- |
-| `nightlife_music` | Concerts, DJ sets, club nights, parties, live music, jazz | `party`, `club`, `konzert`, `concert`, `jazz`, `live music`, `dj` |
-| `sports` | Football, sports tournaments, fitness, yoga, running | `sport`, `fussball`, `football`, `match`, `turnier`, `lauf`, `yoga` |
-| `culture` | Theatre, film screenings, cinema, art exhibitions, museums | `theater`, `kino`, `film`, `dokfilm`, `cinema@square`, `ausstellung`, `museum`, `kunst`, `bühne` |
-| `talks_university` | Lectures, academic panels, symposiums, public talks | `vorlesung`, `antrittsvorlesung`, `symposium`, `tagung`, `kongress`, `kolloquium`, `workshop`, `lecture`, `talk` |
-| `food_drinks` | Wine tastings, dinners, brunches, culinary events, apéros | `lunch`, `dinner`, `degustation`, `apéro`, `brunch`, `kulinarik`, `gastronomie`, `food`, `wine` |
-| `other` | Miscellaneous physical events not matching above taxonomies | Fallback classification |
-
-Online-only events (`webinar`, `zoom meeting`, `virtuell`) are automatically excluded; hybrid events with physical venues are retained.
-
----
+| Eventfrog | `eventfrog.py` | JSON API, rate-limited to 30 requests per minute |
+| Unisg calendar | `typo3_scraper.py` | Paginated TYPO3 HTML event cards |
+| HSG SQUARE | `typo3_scraper.py` | Paginated TYPO3 HTML event cards |
 
 ## Configuration
 
-All pipeline parameters are centralized in `PipelineConfig` within `src/event_aggregation_pipeline/models.py`:
+`PipelineConfig` in `src/event_aggregation_pipeline/models.py` controls collection and output. Pass a custom instance to `run_pipeline(config=...)`.
 
-| Parameter | Default Value | Description |
+| Setting | Default | Purpose |
 | :--- | :--- | :--- |
-| `location_name` | `"St. Gallen"` | Center anchor city |
-| `latitude` | `47.4245` | Geographic anchor latitude |
-| `longitude` | `9.3767` | Geographic anchor longitude |
-| `radius_km` | `15.0` | Event query radius in kilometers |
-| `window_days` | `30` | Time horizon for upcoming events |
-| `timezone` | `"Europe/Zurich"` | Timezone for ISO 8601 formatting |
-| `schedule_cron` | `"0 5 * * 1"` | Scheduled cron expression (Monday 05:00 Zurich) |
-| `output_path` | `"data/events.json"` | Default export path |
+| `location_name` | `"St. Gallen"` | Eventfrog location query |
+| `radius_km` | `15.0` | Eventfrog search radius |
+| `window_days` | `30` | Keep events starting within this many days |
+| `eventfrog_api_url` | `https://api.eventfrog.net/v1/events` | Eventfrog endpoint |
+| `unisg_calendar_url` | `https://www.unisg.ch/de/news/veranstaltungen/veranstaltungskalender/` | University calendar |
+| `hsg_square_url` | `https://www.hsg-square.ch/de/programm/` | HSG SQUARE program |
+| `output_path` | `"data/events.json"` | Snapshot destination |
 
-Pass a custom `PipelineConfig` instance to `run_pipeline(config=custom_cfg)` to target another region or schedule.
-
----
-
-## Automated Refresh (GitHub Actions)
-
-`.github/workflows/events.yml` runs automatically every Monday at 05:00 Europe/Zurich (`0 4 * * 1` UTC) and supports manual `workflow_dispatch`:
-
-1. Sets up Python 3.11 and installs pinned dependencies from `requirements.txt`.
-2. Runs `python run.py` using `EVENTFROG_API_KEY` from repository secrets.
-3. Validates `data/events.json` against `docs/events.schema.json`.
-4. Commits and pushes the updated dataset back to `main` if changes are detected.
-
----
-
-## How to Add a New Source
-
-Adding a new upstream provider requires four steps:
-
-### 1. Register Source Enum
-
-In `src/event_aggregation_pipeline/models.py`, add the source identifier:
-
-```python
-class EventSource(StrEnum):
-    EVENTFROG = "eventfrog"
-    HSG_CALENDAR = "hsg_calendar"
-    HSG_SQUARE = "hsg_square"
-    MY_NEW_SOURCE = "my_new_source"
-```
-
-### 2. Implement Collector / Parser
-
-Create `src/event_aggregation_pipeline/my_new_source.py`:
-
-```python
-from collections.abc import Sequence
-from .models import Event, EventCategory, EventSource, to_zurich_iso
-from .normalization import clean_text, map_category
-
-
-def scrape_my_new_source() -> Sequence[Event]:
-    events: list[Event] = []
-    # ... extraction logic ...
-    return events
-```
-
-### 3. Register in Pipeline Loader
-
-In `src/event_aggregation_pipeline/pipeline.py`, import the scraper, add `EventSource.MY_NEW_SOURCE` to `_SOURCE_ORDER`, and register it in `_build_source_loaders`:
-
-```python
-loaders[EventSource.MY_NEW_SOURCE] = lambda: scrape_my_new_source()
-```
-
-### 4. Add Offline Fixture and Tests
-
-- Save a sample response to `tests/fixtures/my_new_source.html`.
-- Run `just sanitize-fixture tests/fixtures/my_new_source.html`.
-- Add unit parser tests to `tests/test_parser.py`.
-
----
-
-## Development & Verification
+## Development
 
 ```bash
-just check    # ruff, basedpyright, gitleaks, offline pytest suite
-just fmt      # format source code
-just test     # run offline pytest suite
-just secrets  # scan for inadvertent secrets or tokens
+just check    # ruff, basedpyright, gitleaks, pytest
+just fmt      # auto-format with ruff
+just test     # offline pytest suite
+just typecheck
 ```
 
-All tests execute completely offline without external network dependencies.
+All tests run offline against sanitized fixtures in `tests/fixtures/`.
+
+CI (`.github/workflows/ci.yml`) runs `ruff`, `basedpyright`, and `pytest` on every push and pull request. `.github/workflows/events.yml` refreshes the dataset weekly from the public sources; set the `EVENTFROG_API_KEY` repository secret to include Eventfrog.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

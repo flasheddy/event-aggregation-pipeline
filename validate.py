@@ -43,10 +43,10 @@ def validate_document(
         active_schema,
         format_checker=FormatChecker(),
     )
-    errors = sorted(
-        validator.iter_errors(cast(Any, document)),
-        key=lambda error: error.json_path,
+    validation_errors = validator.iter_errors(  # pyright: ignore[reportUnknownMemberType]
+        cast(dict[str, Any], document)
     )
+    errors = sorted(validation_errors, key=lambda error: error.json_path)
     if errors:
         first = errors[0]
         raise ValidationFailure(f"{first.json_path}: {first.message}") from first
@@ -98,7 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     events = document.get("events")
-    count = len(events) if isinstance(events, list) else 0
+    count = len(cast(list[object], events)) if isinstance(events, list) else 0
     print(f"OK: {count} events validated against {args.schema}")
     return 0
 

@@ -24,14 +24,9 @@ test *args:
 secrets:
     gitleaks dir . --no-banner --redact --log-level warn
 
-# Sanitize offline HTML fixture in-place and verify zero secrets
-sanitize-fixture file:
-    uv run python scripts/sanitize_fixture.py "{{ file }}"
-    gitleaks dir "{{ file }}" --no-banner --redact --log-level warn
-
-# Run event aggregation pipeline
+# Run event aggregation pipeline, loading .env when present
 run *args:
-    uv run python run.py {{ args }}
+    @if [[ -f .env ]]; then set -a; source .env; set +a; fi; uv run python run.py {{ args }}
 
 # Validate output events.json against schema
 validate:

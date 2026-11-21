@@ -14,6 +14,7 @@ from typing import Self, cast
 import httpx
 
 from .models import (
+    EVENTFROG_API_URL,
     ZURICH_TZ,
     Event,
     EventLanguage,
@@ -25,7 +26,6 @@ from .normalization import categorize_event, clean_text, detect_language, is_onl
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_API_URL = "https://api.eventfrog.net/v1/events"
 DEFAULT_REQUESTS_PER_MINUTE = 30
 DEFAULT_REQUEST_INTERVAL_SECONDS = 2.0
 REQUEST_TIMEOUT_SECONDS = 15.0
@@ -95,7 +95,7 @@ class EventfrogClient:
         self,
         api_key: str,
         *,
-        api_url: str = DEFAULT_API_URL,
+        api_url: str = EVENTFROG_API_URL,
         client: httpx.Client | None = None,
         limiter: RateLimiter | None = None,
         timeout: float = REQUEST_TIMEOUT_SECONDS,
@@ -112,9 +112,11 @@ class EventfrogClient:
     def from_env(
         cls,
         environ: Mapping[str, str] | None = None,
+        *,
+        api_url: str = EVENTFROG_API_URL,
     ) -> EventfrogClient:
         source = environ if environ is not None else os.environ
-        return cls(source.get("EVENTFROG_API_KEY", ""))
+        return cls(source.get("EVENTFROG_API_KEY", ""), api_url=api_url)
 
     def fetch_events(
         self,
@@ -269,8 +271,12 @@ def _parse_record(record: Mapping[str, object], last_seen_at: str) -> Event | No
     if language is None:
         language = detect_language(description, title)
 
-    latitude = _float(location.get("latitude") or record.get("latitude"))
-    longitude = _float(location.get("longitude") or record.get("longitude"))
+    latitude = _float(location.get("latitude"))
+    if latitude is None:
+        latitude = _float(record.get("latitude"))
+    longitude = _float(location.get("longitude"))
+    if longitude is None:
+        longitude = _float(record.get("longitude"))
     image_url = _image_url(record.get("image") or record.get("image_url"))
     if not _is_http_url(image_url):
         image_url = None

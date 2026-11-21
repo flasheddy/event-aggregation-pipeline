@@ -15,6 +15,8 @@ import httpx
 from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from .models import (
+    HSG_SQUARE_URL,
+    UNISG_CALENDAR_URL,
     ZURICH_TZ,
     Event,
     EventSource,
@@ -29,32 +31,23 @@ REQUEST_TIMEOUT_SECONDS = 15.0
 PAGE_DELAY_SECONDS = 1.0
 
 _BASE_URLS: dict[EventSource, str] = {
-    EventSource.HSG_CALENDAR: (
-        "https://www.unisg.ch/de/news/veranstaltungen/veranstaltungskalender/"
-    ),
-    EventSource.HSG_SQUARE: "https://www.hsg-square.ch/de/programm/",
+    EventSource.HSG_CALENDAR: UNISG_CALENDAR_URL,
+    EventSource.HSG_SQUARE: HSG_SQUARE_URL,
 }
 
 _CLOCK_RE = re.compile(r"^\d{1,2}:\d{2}$")
 _DATE_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.$")
 _YEAR_RE = re.compile(r"\b(20\d{2})\b")
-_LABEL_ALIASES: dict[str, frozenset[str]] = {
-    "ort": frozenset({"ort", "location", "venue"}),
-    "referenten": frozenset({"referent", "referentin", "referenten", "speaker"}),
-}
+_VENUE_LABELS = frozenset({"ort", "location", "venue"})
+_SPEAKER_LABELS = frozenset({"referent", "referentin", "referenten", "speaker"})
 
 
 @dataclass(frozen=True, slots=True)
 class ParsedTypo3Page:
-    """Parsed cards plus discovered pagination metadata for one HTML page."""
+    """Parsed cards and the highest pagination page discovered on one page."""
 
     events: tuple[Event, ...]
-    page_numbers: tuple[int, ...]
-    pagination_urls: tuple[str, ...]
-
-    @property
-    def max_page(self) -> int:
-        return max(self.page_numbers, default=1)
+    max_page: int = 1
 
 
 def parse_typo3_html(
@@ -62,6 +55,7 @@ def parse_typo3_html(
     source: EventSource,
     *,
     last_seen_at: datetime | None = None,
+    base_url: str | None = None,
 ) -> ParsedTypo3Page:
     """Parse all TYPO3 event cards in a static HTML document."""
 
@@ -73,24 +67,20 @@ def parse_typo3_html(
         reference = reference.replace(tzinfo=ZURICH_TZ)
     reference = reference.astimezone(ZURICH_TZ)
     last_seen = to_zurich_iso(reference)
+    resolved_base_url = base_url or _BASE_URLS[source]
 
     tree = LexborHTMLParser(html)
     events: list[Event] = []
     for card in tree.css(".event-item"):
         try:
-            event = _parse_card(card, source, reference, last_seen)
+            event = _parse_card(card, source, reference, last_seen, resolved_base_url)
         except (ValueError, TypeError, KeyError) as exc:
             logger.warning("Skipping malformed %s card: %s", source.value, exc)
             continue
         if event is not None:
             events.append(event)
 
-    page_numbers, pagination_urls = _parse_pagination(tree, source)
-    return ParsedTypo3Page(
-        events=tuple(events),
-        page_numbers=page_numbers,
-        pagination_urls=pagination_urls,
-    )
+    return ParsedTypo3Page(events=tuple(events), max_page=_max_page(tree))
 
 
 def scrape_typo3_site(
@@ -134,6 +124,7 @@ def _parse_card(
     source: EventSource,
     reference: datetime,
     last_seen_at: str,
+    base_url: str,
 ) -> Event | None:
     title_node = card.css_first("h3")
     title = clean_text(title_node.text() if title_node is not None else None, max_length=200)
@@ -146,7 +137,7 @@ def _parse_card(
     category_node = card.css_first(".cat-title")
     source_category = category_node.text() if category_node is not None else None
 
-    venue_lines = _html_lines(_field_container(card, "ort"))
+    venue_lines = _html_lines(_field_container(card, _VENUE_LABELS))
     venue_name = venue_lines[0] if venue_lines else ""
     raw_address = ", ".join(venue_lines[1:]) if len(venue_lines) > 1 else ""
 
@@ -156,7 +147,7 @@ def _parse_card(
         raise ValueError("missing venue")
 
     address = _derive_address(venue_lines)
-    speakers = " ".join(_html_lines(_field_container(card, "referenten")))
+    speakers = " ".join(_html_lines(_field_container(card, _SPEAKER_LABELS)))
 
     link = card.css_first("a.stretched-link")
     if link is None:
@@ -164,7 +155,7 @@ def _parse_card(
     href = link.attributes.get("href") if link is not None else None
     if not href:
         raise ValueError("missing event URL")
-    source_url = urljoin(_BASE_URLS[source], href)
+    source_url = urljoin(base_url, href)
     source_id = _source_id_from_url(source_url)
     if not source_id:
         raise ValueError("missing event slug")
@@ -280,15 +271,14 @@ def _parse_clock(value: str) -> clock_time:
     return clock_time(int(hours), int(minutes))
 
 
-def _field_container(card: LexborNode, field: str) -> LexborNode | None:
-    aliases = _LABEL_ALIASES[field]
+def _field_container(card: LexborNode, labels: frozenset[str]) -> LexborNode | None:
     cells = card.css(".row .col-12")
     for index, cell in enumerate(cells):
         label = clean_text(cell.text(), max_length=64)
         if label is None:
             continue
         normalized = label.rstrip(":").strip().casefold()
-        if normalized in aliases and index + 1 < len(cells):
+        if normalized in labels and index + 1 < len(cells):
             return cells[index + 1]
     return None
 
@@ -334,33 +324,21 @@ def _source_id_from_url(url: str) -> str:
     return unquote(slug)
 
 
-def _parse_pagination(
-    tree: LexborHTMLParser,
-    source: EventSource,
-) -> tuple[tuple[int, ...], tuple[str, ...]]:
+def _max_page(tree: LexborHTMLParser) -> int:
     container = tree.css_first("ul.cs2events-pagination")
     links = container.css("a") if container is not None else tree.css('a[href*="page="]')
-
-    discovered: dict[int, str] = {}
-    for link in links:
-        href = link.attributes.get("href")
-        if not href:
-            continue
-        page_number = _page_number_from_link(link, href)
-        if page_number is None or page_number in discovered:
-            continue
-        discovered[page_number] = urljoin(_BASE_URLS[source], href)
-
-    page_numbers = tuple(sorted({1, *discovered}))
-    pagination_urls = tuple(discovered[number] for number in sorted(discovered))
-    return page_numbers, pagination_urls
+    pages = [number for link in links if (number := _page_number_from_link(link)) is not None]
+    return max(pages, default=1)
 
 
-def _page_number_from_link(link: LexborNode, href: str) -> int | None:
+def _page_number_from_link(link: LexborNode) -> int | None:
     data_page = link.attributes.get("data-page")
     if data_page is not None and data_page.isdigit():
         return int(data_page)
 
+    href = link.attributes.get("href")
+    if href is None:
+        return None
     query = parse_qs(urlparse(href).query)
     values = query.get("page")
     if values and values[0].isdigit():
@@ -376,7 +354,7 @@ def _fetch_page(
 ) -> ParsedTypo3Page:
     response = client.get(url)
     response.raise_for_status()
-    return parse_typo3_html(response.text, source, last_seen_at=reference)
+    return parse_typo3_html(response.text, source, last_seen_at=reference, base_url=url)
 
 
 def _with_page_number(url: str, page_number: int) -> str:

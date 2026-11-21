@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,7 +17,6 @@ from event_aggregation_pipeline.models import (
     Event,
     EventCategory,
     EventSource,
-    PipelineConfig,
 )
 from event_aggregation_pipeline.pipeline import run_pipeline
 from event_aggregation_pipeline.typo3_scraper import parse_typo3_html
@@ -155,7 +155,6 @@ def test_deduplicator_cross_source_hsg_fixtures() -> None:
 
 
 def test_pipeline_offline_end_to_end_and_schema_validation(tmp_path: Path) -> None:
-    config = PipelineConfig()
     output_path = tmp_path / "data" / "events.json"
 
     event_list = run_pipeline(offline=True, output_path=output_path, now=FIXED_NOW)
@@ -166,8 +165,7 @@ def test_pipeline_offline_end_to_end_and_schema_validation(tmp_path: Path) -> No
 
     document = validate_module.validate_file(output_path)
     assert document["generated_at"] == "2026-11-17T05:00:00+01:00"
-    raw_events = document["events"]
-    assert isinstance(raw_events, list)
+    raw_events = cast(list[dict[str, object]], document["events"])
     assert len(raw_events) == 18
 
     sources = {str(event["source"]) for event in raw_events}
@@ -175,8 +173,6 @@ def test_pipeline_offline_end_to_end_and_schema_validation(tmp_path: Path) -> No
 
     ids = {str(event["id"]) for event in raw_events}
     assert len(ids) == 18
-    assert config.timezone == "Europe/Zurich"
-    assert config.schedule_cron == "0 5 * * 1"
 
 
 def test_pipeline_fault_isolation_and_last_valid_file_preservation(
@@ -198,8 +194,7 @@ def test_pipeline_fault_isolation_and_last_valid_file_preservation(
     assert len(isolated.events) == 12
     assert all(event.source is not EventSource.HSG_CALENDAR for event in isolated.events)
     document = validate_module.validate_file(output_path)
-    raw_events = document["events"]
-    assert isinstance(raw_events, list)
+    raw_events = cast(list[dict[str, object]], document["events"])
     assert len(raw_events) == 12
 
     before = output_path.read_bytes()

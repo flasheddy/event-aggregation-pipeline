@@ -7,12 +7,16 @@ from enum import StrEnum
 from typing import Self
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ZURICH_TZ = ZoneInfo("Europe/Zurich")
 
 ISO_DATETIME_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2})$"
 HTTP_URL_PATTERN = r"^https?://\S+$"
+
+EVENTFROG_API_URL = "https://api.eventfrog.net/v1/events"
+UNISG_CALENDAR_URL = "https://www.unisg.ch/de/news/veranstaltungen/veranstaltungskalender/"
+HSG_SQUARE_URL = "https://www.hsg-square.ch/de/programm/"
 
 
 class EventSource(StrEnum):
@@ -129,35 +133,15 @@ class EventList(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    """Single source of truth for location, window, schedule, and endpoints."""
+    """Runtime settings for collection and output."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     location_name: str = Field(default="St. Gallen", min_length=1)
-    latitude: float = Field(default=47.4245, ge=-90.0, le=90.0)
-    longitude: float = Field(default=9.3767, ge=-180.0, le=180.0)
     radius_km: float = Field(default=15.0, gt=0.0)
     window_days: int = Field(default=30, ge=1)
-    timezone: str = "Europe/Zurich"
-    schedule_cron: str = Field(default="0 5 * * 1", min_length=1)
-    schedule_description: str = "weekly on Monday 05:00 Europe/Zurich"
 
-    eventfrog_api_url: str = Field(
-        default="https://api.eventfrog.net/v1/events",
-        pattern=HTTP_URL_PATTERN,
-    )
-    unisg_calendar_url: str = Field(
-        default=("https://www.unisg.ch/de/news/veranstaltungen/veranstaltungskalender/"),
-        pattern=HTTP_URL_PATTERN,
-    )
-    hsg_square_url: str = Field(
-        default="https://www.hsg-square.ch/de/programm/",
-        pattern=HTTP_URL_PATTERN,
-    )
+    eventfrog_api_url: str = Field(default=EVENTFROG_API_URL, pattern=HTTP_URL_PATTERN)
+    unisg_calendar_url: str = Field(default=UNISG_CALENDAR_URL, pattern=HTTP_URL_PATTERN)
+    hsg_square_url: str = Field(default=HSG_SQUARE_URL, pattern=HTTP_URL_PATTERN)
     output_path: str = Field(default="data/events.json", min_length=1)
-
-    @field_validator("timezone")
-    @classmethod
-    def _validate_timezone(cls, value: str) -> str:
-        ZoneInfo(value)
-        return value

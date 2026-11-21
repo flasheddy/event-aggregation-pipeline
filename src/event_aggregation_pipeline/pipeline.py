@@ -29,11 +29,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
 
 SourceLoader = Callable[[], Sequence[Event]]
-_SOURCE_ORDER: tuple[EventSource, ...] = (
-    EventSource.EVENTFROG,
-    EventSource.HSG_CALENDAR,
-    EventSource.HSG_SQUARE,
-)
 
 
 class PipelineError(RuntimeError):
@@ -65,10 +60,7 @@ def run_pipeline(
     )
 
     collected: list[Event] = []
-    for source in _SOURCE_ORDER:
-        loader = loaders.get(source)
-        if loader is None:
-            continue
+    for source, loader in loaders.items():
         try:
             source_events = list(loader())
         except Exception:
@@ -159,7 +151,7 @@ def _build_source_loaders(
         return _offline_loaders(last_seen_at)
 
     def load_eventfrog() -> list[Event]:
-        with EventfrogClient.from_env() as client:
+        with EventfrogClient.from_env(api_url=config.eventfrog_api_url) as client:
             return client.fetch_events(
                 location=config.location_name,
                 radius_km=config.radius_km,
